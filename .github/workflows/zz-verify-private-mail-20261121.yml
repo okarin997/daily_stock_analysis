@@ -1,0 +1,40 @@
+name: Verify private report delivery
+on:
+  push:
+    branches: [dot/verify-private-mail-20261121]
+    paths: [.github/workflows/zz-verify-private-mail-20261121.yml]
+permissions: {}
+jobs:
+  verify:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Verify Gmail delivery using sample text
+        env:
+          MAIL_USER: ${{ secrets.EMAIL_SENDER }}
+          MAIL_PASS: ${{ secrets.EMAIL_PASSWORD }}
+          MAIL_TO: ${{ secrets.EMAIL_RECEIVERS }}
+        run: |
+          python3 - <<'PY'
+          import os, smtplib, ssl
+          from email.message import EmailMessage
+          user = os.environ.get('MAIL_USER', '').strip()
+          target = os.environ.get('MAIL_TO', '').strip()
+          password = ''.join(os.environ.get('MAIL_PASS', '').split())
+          if not user or not password or target.lower() != user.lower() or not user.lower().endswith('@gmail.com') or any(c.isspace() for c in user) or any(c in user for c in ',;<>'):
+              raise SystemExit('Check the three email secrets: use one identical Gmail address for sender and recipient.')
+          mail = EmailMessage()
+          mail['From'] = user
+          mail['To'] = target
+          mail['Subject'] = 'Private report delivery check 20261121-0328'
+          mail.set_content('This test only verifies private email delivery. It contains no stock data.')
+          try:
+              with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=25, context=ssl.create_default_context()) as smtp:
+                  smtp.login(user, password)
+                  if smtp.send_message(mail, from_addr=user, to_addrs=[target]):
+                      raise RuntimeError()
+          except (OSError, smtplib.SMTPException, RuntimeError) as exc:
+              raise SystemExit(f'Gmail SMTP test failed: {type(exc).__name__}') from None
+          print('Gmail SMTP accepted the test message.')
+          PY
